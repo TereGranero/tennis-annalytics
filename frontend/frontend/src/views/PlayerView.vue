@@ -9,9 +9,9 @@
                :src="'https://flagcdn.com/w40/' + player.country + '.png'"
                :alt="player.country"
                :title="player.country"
-               class="flag me-2"> 
+               class="flag me-3"> 
             <h2 class="text-center m-0">
-               {{ player.fullname.toUpperCase() }}
+               {{ (player.name_first + ' ' + player.name_last).toUpperCase() }}
             </h2>
          </div>
       </div>
@@ -39,14 +39,15 @@ export default {
    data() {
       return {
          player: {
-            "player_id": '',
-            "name_last": '',
-            "hand": '-',
-            "birth_date": null,
-            "country": '-',
-            "height": '-',
-            "wikidata_id": '-',
-            "fullname": '',
+            player_id: '',
+            name_first: '',
+            name_last: '',
+            hand: '-',
+            birth_date: null,
+            country: '-',
+            height: '-',
+            wikidata_id: '-',
+            fullname: '',
          },
       }
    },

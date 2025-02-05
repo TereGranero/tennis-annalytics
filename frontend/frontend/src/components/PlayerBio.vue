@@ -34,7 +34,11 @@
                      <td>{{ player.height }}</td>
                   </tr>
                   <tr>
-                     <th scope="row">Mejor ranking</th>
+                     <th scope="row">Peso</th>
+                     <td> ? </td>
+                  </tr>
+                  <tr>
+                     <th scope="row">Profesional desde</th>
                      <td> ? </td>
                   </tr>
                </tbody>

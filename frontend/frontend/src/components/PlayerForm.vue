@@ -36,13 +36,31 @@
                         class="form-control"
                         :class="{'is-invalid': processing && invalidFirstName}"
                         @focus="resetState"
-                        v-model="firstName">
+                        v-model="player.name_first">
                      <div v-if="processing && invalidFirstName" class="invalid-feedback">
                         Debes rellenar el campo Nombre
                      </div>
                   </div>
                </div>
             </div>
+
+            <!-- Birth Date -->
+            <!-- <div class="row justify-content-center">
+               <div class="col-md-6">
+                  <div class="form-group">
+                     <label>Fecha de nacimiento:</label>
+                     <input 
+                        type="date" 
+                        class="form-control"
+                        :class="{'is-invalid': processing && invalidBirthDate}" 
+                        @focus="resetState"
+                        v-model="player.birth_date">
+                     <div v-if="processing && invalidBirthDate" class="invalid-feedback">
+                        Debes seleccionar una fecha válida
+                     </div>
+                  </div>
+               </div>
+            </div> -->
 
             <!-- Birth Date -->
             <div class="row justify-content-center">
@@ -52,12 +70,8 @@
                      <input 
                         type="date" 
                         class="form-control"
-                        :class="{'is-invalid': processing && invalidBirthDate}"
                         @focus="resetState"
                         v-model="player.birth_date">
-                     <div v-if="processing && invalidBirthDate" class="invalid-feedback">
-                        Debes seleccionar una fecha válida
-                     </div>
                   </div>
                </div>
             </div>
@@ -173,17 +187,17 @@ export default {
    data() {
       return {
          player: {
-            "player_id": '',
-            "name_last": '',
-            "hand": '-',
-            "birth_date": null,
-            "country": '-',
-            "height": '-',
-            "wikidata_id": '-',
-            "fullname": '',
+            player_id: '',
+            name_first: '',
+            name_last: '',
+            hand: '-',
+            birth_date: null,
+            country: '-',
+            height: '-',
+            wikidata_id: '-',
+            fullname: '',
          },
-         firstName: '', //not in DB
-         allCountries: [],  //comes from library
+         allCountries: [],  // comes from library
          allHands: ['-', 'Derecha', 'Izquierda'],
          processing: false,
          error: false,
@@ -198,18 +212,18 @@ export default {
 
       formattedFirstName() {
          // Checks if fistName is already formatted as initials
-         const isFormatted = this.firstName
+         const isFormatted = this.player.name_first
             .split(' ')
             .every(word => /^[A-Z](\.[A-Z])*\.$/.test(word))
 
          if (isFormatted) {
-            return this.firstName
+            return this.player.name_first
          }
          // Formats as initials
-         return this.firstName
+         return this.player.name_first
             .split(' ')
             .map((word) => word.charAt(0).toUpperCase() + '.')
-            .join('');
+            .join('')
       },
 
       // --------------------------- Validates Form ---------------------------
@@ -219,14 +233,14 @@ export default {
       },
 
       invalidFirstName() {
-         return this.firstName < 1
+         return this.player.name_first < 1
       },
 
       invalidBirthDate() {
-         return ( 
-            !this.player.birth_date || 
-            new Date(this.player.birth_date) >= new Date()
-         ) 
+         if (this.player.birth_date){
+            return ( new Date(this.player.birth_date) >= new Date() ) 
+         }
+         return false
       },
       
       invalidCountry() {
@@ -243,7 +257,6 @@ export default {
             (parseInt(this.player.height, 10) < 100 || 
                parseInt(this.player.height, 10) > 270)
          )
-
       },
             
       invalidHand() {
@@ -255,9 +268,9 @@ export default {
    },
 
    watch: {
-      // Launches method updateFullname when name_last or firstName is updated
+      // Launches method updateFullname when name_last or name_first is updated
       'player.name_last': 'updateFullname',
-      firstName : 'updateFullname',
+      'player.name_first': 'updateFullname',
    },
 
    methods: {
@@ -285,7 +298,8 @@ export default {
          this.resetState()
 
          // Validates fields
-         if(this.invalidLastName || this.invalidFirstName || this.invalidBirthDate || this.invalidCountry || this.invalidHeight || this.invalidHand) {
+         //if(this.invalidLastName || this.invalidFirstName || this.invalidBirthDate || this.invalidCountry || this.invalidHeight || this.invalidHand) {
+         if(this.invalidLastName || this.invalidFirstName || this.invalidCountry || this.invalidHeight || this.invalidHand) {
             this.error = true
             return
          }
@@ -305,16 +319,16 @@ export default {
 
          // Resets form and variables
          this.player = {
-            "player_id": '',
-            "name_last": '',
-            "hand": '-',
-            "birth_date": null,
-            "country": '-',
-            "height": '-',
-            "wikidata_id": '-',
-            "fullname": '',
+            player_id: '',
+            name_first: '',
+            name_last: '',
+            hand: '-',
+            birth_date: null,
+            country: '-',
+            height: '-',
+            wikidata_id: '-',
+            fullname: '',
          },
-         this.firstName = ''
          this.processing = false
          this.error = false
       },

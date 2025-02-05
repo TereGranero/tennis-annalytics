@@ -17,34 +17,46 @@
       <div class="row" v-if="!players.length" >
          <div class="col-md-12">
             <div class="alert alert-info text-center" role="alert">
-               No hay jugadores! 
+               Cargando jugadores...
             </div>
          </div>
       </div>
 
-      <!-- Add Player Button -->
-      <div class="row">
-         <div class="col-md-12">
+      <div class="row align-items-center mb-3">
+         <!-- Add Player Button -->
+         <div class="col-md-6">
             <button 
-               type="text" 
+               type="button" 
                class="btn btn-secondary" 
                @click="addPlayer">
                Añadir Jugador
             </button>
-         <br><br>
+         </div>
+         <!-- Search by Last Name -->
+         <div class="col-md-6">
+            <div class="input-group">
+               <label for="searchInput" class="input-group-text">
+                  Buscar:
+               </label>
+               <input 
+                  type="text" 
+                  class="form-control" 
+                  v-model="lastNameToSearch" 
+                  @input="searchPlayersByLastName" 
+                  placeholder="Buscar por apellido" >
+            </div>
          </div>
       </div>
 
       <!-- PlayersList Component -->
       <div class="row">
-         <div class="col-md-12">
+         <div class="col-md-12 mb-3">
             <PlayersList 
                :players="players"
                @view-player="viewPlayer"
                @edit-player="editPlayer"
                @delete-player="deleteOnePlayer"
             /> 
-            <br>
          </div>
       </div>
 
@@ -57,7 +69,7 @@
                @click="goToPage(page - 1)" :disabled="page <= 1">
             Anterior
             </button>
-            Página {{ page }}
+            Página {{ page }} de {{ totalPages }}
             <button 
                type="text" 
                class="btn btn-secondary btn-sm" 
@@ -67,6 +79,7 @@
             </button>
          </div>
       </div>
+
    </div>
 </template>
 
@@ -82,16 +95,21 @@ export default {
          players: [],
          totalPlayers: 0,
          page: 1,
-         perPage: 20,
+         perPage: 10,
          totalPages: 0,
+         lastNameToSearch: '',
       }
    },
 
    methods: {
       async loadPlayers() {
-         // Retrieve all players with pagination
+         // Retrieve all players or filtered players with pagination
          try {
-            const data = await getAllPlayers(this.page, this.perPage)
+            const data = await getAllPlayers(
+               this.page, 
+               this.perPage,
+               this.lastNameToSearch
+            )
             
             if (data.status == 'error') {
                console.error(`Backend response error: ${data.message}`)
@@ -105,6 +123,11 @@ export default {
          } catch(err) {
             console.error(`Error retrieving players: ${err}`)
          }
+      },
+
+      searchPlayersByLastName() {
+         this.page = 1
+         this.loadPlayers()
       },
 
       async goToPage(page) {

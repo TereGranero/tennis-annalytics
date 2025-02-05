@@ -3,9 +3,13 @@ import { httpClient, httpClientWiki } from './httpClient';
 const playersEndpoint = '/players';
 const wikiEndpoint = '/w/api.php';
 
-export const getAllPlayers = async (page, perPage) => {
+export const getAllPlayers = async (page, perPage, lastNameToSearch = '') => {
   const res = await httpClient.get(playersEndpoint, {
-    params: {page: page, per_page: perPage}
+    params: {
+      page: page, 
+      per_page: perPage,
+      search_name_last: lastNameToSearch
+    }
   });
   return res.data;
 };

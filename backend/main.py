@@ -1,18 +1,27 @@
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy # ORM
-from sqlalchemy import func
-from sqlalchemy.orm import aliased
+from sqlalchemy import func, select, desc
 import pycountry
 import os
 from datetime import datetime
+
+from Services.wikidata_services import get_wikidata_id,\
+                                       get_wikidata_country,\
+                                       get_wikidata_birth_date, \
+                                       get_wikidata_height, \
+                                       get_wikidata_weight, \
+                                       get_wikidata_hand
+
+# -------------------------- CONFIGURATION ---------------------------------- #
 
 # instanciates a Flask application
 app = Flask(__name__) 
 # updates the application constantly
 app.config.from_object(__name__) 
 
-# determines the database system used and path to database relative to the app instance folder
+# determines the database system used 
+# and path to database relative to the app instance folder
 app.config['SQLALCHEMY_DATABASE_URI'] =  f"sqlite:///{os.path.abspath('tennisdb.sqlite')}"
 # reduces terminal warnings
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False 
@@ -25,6 +34,7 @@ CORS(app, resources={r"/*":{'origins':"*"}})
 # instantiates the database
 db = SQLAlchemy(app)
 
+# -------------------------- AUX FUNCTIONS ---------------------------------- #
 
 def normalize_values_into_db(field, value):
    
@@ -32,12 +42,12 @@ def normalize_values_into_db(field, value):
       hand_mapping_dict = {
          'Derecha': 'R',
          'Izquierda': 'L',
-         '-': 'Unknown'
+         '-': 'unknown'
       }
-      return hand_mapping_dict.get(value, 'Unknown')
+      return hand_mapping_dict.get(value, 'unknown')
    
    if field in ['height', 'wikidata_id']:
-      return value if (value and value != '-') else 'Unknown'
+      return value if (value and value != '-') else 'unknown'
    
    if field == 'birth_date':
       return datetime.strptime(value, '%Y-%m-%d').date() if value else None
@@ -52,15 +62,19 @@ def normalize_values_into_db(field, value):
          return 'unknown'
       
       except Exception as e:
-         print(f'Error converting country: {value}, Error: {e}')
+         error_msg = f'Error converting country {value}: {str(e)}'
+         app.logger.error(error_msg, exc_info=True)
+         
          return 'unknown'
 
       
    
+# ---------------------------- DATA MODELS ---------------------------------- #
 
 # Model for table Players
 class Players(db.Model):
    player_id = db.Column(db.String(7), primary_key=True)
+   name_first = db.Column(db.String(50))
    name_last = db.Column(db.String(50))
    hand = db.Column(db.String(7))
    birth_date = db.Column(db.Date)
@@ -68,6 +82,9 @@ class Players(db.Model):
    height = db.Column(db.String(3))
    wikidata_id = db.Column(db.String(15))
    fullname = db.Column(db.String(60))
+   instagram = db.Column(db.String(100))
+   facebook = db.Column(db.String(100))
+   x_twitter = db.Column(db.String(100))
    rankings = db.relationship('Rankings', backref='player', lazy='dynamic')
    
    def to_dict(self):
@@ -94,7 +111,7 @@ class Players(db.Model):
             return 'Derecha'
          if hand == 'L':
             return 'Izquierda'
-         if hand != 'unknown':  # other values not allowed
+         if hand != 'unknown':  # not allowed values
             hand = 'unknown'
          return format_unknown(hand)
       
@@ -105,6 +122,7 @@ class Players(db.Model):
       
       return {
          'player_id': self.player_id,
+         'name_first': format_unknown(self.name_first),
          'name_last': self.name_last,
          'hand': normalize_hand(self.hand),
          'birth_date': format_birth_date(self.birth_date),
@@ -116,6 +134,7 @@ class Players(db.Model):
 
    def get_best_ranking(self):
       return self.rankings.order_by(Rankings.rank.asc()).first()
+   
       
 # Model for table Rankings
 class Rankings(db.Model):
@@ -146,40 +165,112 @@ class Rankings(db.Model):
       }
 
 
+# ------------------------------- ROUTES ------------------------------------ #
 
 # GET all players route handle
-@app.route('/players')
-def get_all_players():
+@app.route('/players', methods=['GET'])
+def get_players():
    try:
-      # Retrieves tuples with player and his best ranking for ALL players
-      query = db.session.query(Players, func.min(Rankings.rank).label('best_rank'))\
-            .outerjoin(Rankings, Players.player_id == Rankings.player_id)\
-            .group_by(Players)\
-            .order_by(Players.birth_date.desc())
-            
-      #query = db.session.query(Players).order_by(Players.birth_date.desc())
-      total_players = query.count()
-            
-      page = int(request.args.get('page', 1))  # page 1 as default
-      if page < 1 : page = 1
       
-      per_page = int(request.args.get('per_page', 20))   # 20 players per page
-      if ((per_page < 1) or (per_page > total_players)) : per_page = 20
+      # Gets and validates arguments
+      page = int(request.args.get('page', 1))     
+      per_page = int(request.args.get('per_page', 10))
+      search_name_last = request.args.get('search_name_last', '').strip()
+      
+      if page < 1 : 
+         page = 1
+      
+      if (per_page < 1 or per_page > 30): 
+         per_page = 10
+      
+      # Retrieves all players in database
+      base_query = db.session.query(Players)
 
-      total_pages = (total_players + per_page - 1) // per_page
-      if page > total_pages: page = total_pages
+      # Filters by search_name_last if provided
+      if search_name_last:
+         base_query = base_query.filter(Players.name_last.ilike(f'%{search_name_last}%'))
+
+      # Calculates number of filtered players
+      total_players = base_query.count()
       
-      # Filters players in page
-      players_page = query.offset((page - 1) * per_page).limit(per_page).all()
+      # Calculates number of pages for all filtered players
+      total_pages = (total_players + per_page - 1) // per_page
+      
+      if page > total_pages: 
+         page = total_pages if total_pages > 0 else 1
+     
+      # Retrieves filtered players for current page
+      query = (
+         base_query
+         .order_by(desc(Players.birth_date))
+         .offset((page - 1) * per_page)
+         .limit(per_page)
+      )
+
+      # Query: retrieves players with their best_rank for current page
+      # query = (
+      #    select(Players, func.min(Rankings.rank).label('best_rank'))
+      #    .outerjoin(Rankings, Players.player_id == Rankings.player_id)
+      #    .filter(Players.player_id.in_(subquery))
+      #    .group_by(Players)
+      #    .order_by((Players.birth_date))
+      # )
+      
+      # List of players objects
+      players_objects_list = query.all()
+      
+      # Converts to list of dicts
       players_list_in_page = []
       
-      # Composes dict for each player from tuple
-      for player, best_rank in players_page:
-         player_dict = player.to_dict()
-         player_dict['best_ranking'] = best_rank if best_rank is not None else '-'
+      # Composes dict for each player and searches missings in Wikidata
+      #for player, best_rank in players_page:
+      for player_object in players_objects_list:
          
-         players_list_in_page.append(player_dict)
-      
+         player = player_object.to_dict()         
+         
+         # Controls if commit is needed
+         update_flag = False    
+
+         # Gets wikidata id
+         if player['wikidata_id'] == '-':
+            
+            # Composes complete player name
+            if player['name_first'] == '-':
+               player_name = player['name_last'].strip()
+            else:
+               player_name = player['name_first'].strip() + ' ' + player['name_last'].strip()
+               
+            wikidata_id = get_wikidata_id(player_name)
+            if wikidata_id:
+               player['wikidata_id'] = wikidata_id
+               player_object.wikidata_id = wikidata_id 
+               update_flag = True
+         
+         # Gets country
+         if player['wikidata_id'] != '-' and player['country'] == 'unknown':
+            
+            country = get_wikidata_country(player['wikidata_id'])
+            if country: 
+               player['country'] = country
+               player_object.country = country
+               update_flag = True
+               
+         # Gets birth_date
+         if player['wikidata_id'] != '-' and \
+            ( player['birth_date'] == None or player['birth_date'] == '' or player['birth_date'] == '01-01-1800'):
+            
+            birth_date = get_wikidata_birth_date(player['wikidata_id'])
+            if birth_date: 
+               player['birth_date'] = birth_date.strftime('%d-%m-%Y') 
+               player_object.birth_date = birth_date
+               update_flag = True
+            
+         players_list_in_page.append(player)
+         
+         # Commits changes into database
+         if update_flag:
+            db.session.commit()
+               
       
       response_object = {
          'status':'success',
@@ -188,15 +279,16 @@ def get_all_players():
          'total_players': total_players, 
          'page': page,
          'pages': total_pages
-         } 
+      } 
       
       return jsonify(response_object), 200
    
    except Exception as e:
-      app.logger.error(f"Error retrieving players: {str(e)}", exc_info=True)
+      error_msg = f'Error retrieving players: {str(e)}'
+      app.logger.error(error_msg, exc_info=True)
       return jsonify({
          'status': 'error', 
-         'message': f'Error retrieving players: {str(e)}'
+         'message': error_msg
       }), 500
       
       
@@ -207,9 +299,11 @@ def get_player(player_id):
         player = Players.query.filter_by(player_id=player_id).first()
 
         if not player:
+            error_msg = f'Player id {player_id} not found in database.'
+            print(error_msg)
             return jsonify({
                 'status': 'error',
-                'message': f'Player id {player_id} not found in database.'
+                'message': error_msg
             }), 404
 
         return jsonify({
@@ -218,11 +312,13 @@ def get_player(player_id):
         }), 200
 
     except Exception as e:
-        print(f'Error retrieving player: {str(e)}')
-        return jsonify({
-            'status': 'error',
-            'message': f'Error retrieving player: {str(e)}'
-        }), 500
+         error_msg = f'Error retrieving player: {str(e)}'
+         app.logger.error(error_msg, exc_info=True)
+         
+         return jsonify({
+               'status': 'error',
+               'message': error_msg
+         }), 500
 
 
 # POST player route handle
@@ -236,6 +332,7 @@ def add_player():
       # Creates new instance of model
       new_player = Players(
          player_id=data.get('player_id'),
+         name_first=data.get('name_first'),
          name_last=data.get('name_last'),
          hand=normalize_values_into_db('hand', data.get('hand')),
          birth_date=normalize_values_into_db('birth_date', data.get('birth_date')),
@@ -258,10 +355,12 @@ def add_player():
    
    except Exception as e:
       db.session.rollback()
-      print( f'Error adding new player: {str(e)}')
+      error_msg = f'Error adding new player: {str(e)}'
+      app.logger.error(error_msg, exc_info=True)
+      
       return jsonify({
          'status': 'error', 
-         'message': f'Error adding new player: {str(e)}'
+         'message': error_msg
       }), 500
       
 # DELETE player route handle
@@ -288,77 +387,64 @@ def delete_player(player_id):
         }), 200
 
     except Exception as e:
-        print(f'Error deleting player: {str(e)}')
+        error_msg = f'Error deleting player: {str(e)}'
+        app.logger.error(error_msg, exc_info=True)
+        
         return jsonify({
             'status': 'error',
-            'message': f'Error deleting player: {str(e)}'
+            'message': error_msg
         }), 500
 
 # PUT player by id route handle
 @app.route('/players/<string:player_id>', methods=['PUT'])
 def update_player(player_id):
-    try:
-        player = Players.query.filter_by(player_id=player_id).first()
+   try:
+      player = Players.query.filter_by(player_id=player_id).first()
 
-        if not player:
-            return jsonify({
-                'status': 'error',
-                'message': f'Player id {player_id} not found in database.'
-            }), 404
+      if not player:
+         return jsonify({
+               'status': 'error',
+               'message': f'Player id {player_id} not found in database.'
+         }), 404
 
-        data = request.get_json()
+      data = request.get_json()
 
-        # Updates player
-        if 'name_last' in data:
-            player.name_last = data['name_last']
-        if 'hand' in data:
-            player.hand = normalize_values_into_db('hand', data['hand'])
-        if 'birth_date' in data:
-            player.birth_date = normalize_values_into_db('birth_date', data['birth_date'])
-        if 'country' in data:
-            player.country = data['country']
-        if 'height' in data:
-            player.height = normalize_values_into_db('height', data['height'])
-        if 'wikidata_id' in data:
-            player.wikidata_id = normalize_values_into_db('wikidata_id', data['wikidata_id'])
-        if 'fullname' in data:
-            player.fullname = data['fullname']
+      # Updates player
+      if 'name_first' in data:
+         player.name_first = data['name_first']
+      if 'name_last' in data:
+         player.name_last = data['name_last']
+      if 'hand' in data:
+         player.hand = normalize_values_into_db('hand', data['hand'])
+      if 'birth_date' in data:
+         player.birth_date = normalize_values_into_db('birth_date', data['birth_date'])
+      if 'country' in data:
+         player.country = data['country']
+      if 'height' in data:
+         player.height = normalize_values_into_db('height', data['height'])
+      if 'wikidata_id' in data:
+         player.wikidata_id = normalize_values_into_db('wikidata_id', data['wikidata_id'])
+      if 'fullname' in data:
+         player.fullname = data['fullname']
 
-        # Commits changes into database
-        db.session.commit()
+      # Commits changes into database
+      db.session.commit()
 
-        return jsonify({
-            'status': 'success',
-            'message': f'Player id {player_id} has been successfully updated.'
-        }), 200
+      return jsonify({
+         'status': 'success',
+         'message': f'Player id {player_id} has been successfully updated.'
+      }), 200
 
-    except Exception as e:
-        db.session.rollback()
-        print(f'Error updating player: {str(e)}')
-        return jsonify({
-            'status': 'error',
-            'message': f'Error updating player: {str(e)}'
-        }), 500
+   except Exception as e:
+      db.session.rollback()
+      error_msg = f'Error updating player: {str(e)}'
+      app.logger.error(error_msg, exc_info=True)
+      
+      return jsonify({
+         'status': 'error',
+         'message': error_msg
+      }), 500
 
-
-
-
-   # # Wikidata API endpoint
-   # url = "https://www.wikidata.org/w/api.php"
-
-   # # Parámetros de la solicitud
-   # params = {
-   #    "action": "wbgetentities",
-   #    "ids": "Q3494",  # Reemplaza con el wikidata_id
-   #    "format": "json",
-   #    "languages": "en"
-   # }
-
-   # # Realizar la solicitud
-   # response = requests.get(url, params=params)
-
-   # # Procesar la respuesta
-   # data = response.json()
 
 if __name__ == "__main__":
    app.run(debug=True) #development mode

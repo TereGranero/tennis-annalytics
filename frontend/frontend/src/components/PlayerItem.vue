@@ -17,11 +17,6 @@
       <!-- Birthday -->
       <td>{{ player.birth_date }}</td>
 
-      <!-- Best Ranking -->
-      <td> 
-         <span v-if="player.best_ranking !== '-'"> {{ player.best_ranking }} </span>
-      </td>
-
       <!-- Font Awesome Buttons -->
       <td>
          <i class="fas fa-eye text-secondary cursor-pointer me-2" 

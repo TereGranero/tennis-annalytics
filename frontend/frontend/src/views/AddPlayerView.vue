@@ -6,7 +6,7 @@
  
  <script>
  import PlayerForm from '@/components/PlayerForm.vue';
- import {createPlayer} from '@/api/connectionService'
+ import { createPlayer } from '@/api/connectionService'
 
  export default {
    components: { PlayerForm },
@@ -15,7 +15,7 @@
       async addPlayer(player){
          try{
             await createPlayer(player)
-            console.log(`Player id: ${player.player_id} has been added successfully`)
+            console.log(`Player id: ${player.player_id} has been added successfully.`)
             this.$router.push('/players')
             
          }catch(err){

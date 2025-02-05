@@ -11,6 +11,13 @@ const routes = [
     component: PlayersView,
   },
 
+  // {
+  //   path: "/players-search/:last-name",
+  //   name: "SearchPlayers",
+  //   component: SearchPlayersView,
+  //   props: true,
+  // },
+
   {
     path: "/add-player",
     name: "AddPlayer",
