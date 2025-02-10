@@ -16,10 +16,7 @@
                <tbody>
                   <tr v-if="player.country !== 'unknown'">
                      <th scope="row">País</th>
-                     <td>
-
-                        <span> {{ countryName }}</span>
-                     </td>
+                     <td> {{ countryName }}</td>
                   </tr>
                   <tr>
                      <th scope="row">Nacimiento</th>

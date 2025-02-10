@@ -1,7 +1,7 @@
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy # ORM
-from sqlalchemy import func, select, desc
+from sqlalchemy import func, desc, extract
 import pycountry
 import os
 from datetime import datetime
@@ -134,6 +134,46 @@ class Players(db.Model):
 
    def get_best_ranking(self):
       return self.rankings.order_by(Rankings.rank.asc()).first()
+   
+   def get_all_rankings(self):
+      # return array of dicts with 'player_id', 'ranking_date','points','rank'
+      
+      rankings_object_list = self.rankings.order_by(Rankings.ranking_date.asc()).all()
+      rankings_list_in_player = []
+      for ranking_object in rankings_object_list:
+         ranking = ranking_object.to_dict()
+         rankings_list_in_player.append(ranking)
+      
+      return rankings_list_in_player
+   
+   def get_rank_by_year(self):
+
+      # Groups rankings by year and retrieves last ranking by year
+      subquery = self.rankings.with_entities(
+         extract('year', Rankings.ranking_date).label('year'),    
+         func.max(Rankings.ranking_date).label('max_date')
+      ).group_by(extract('year', Rankings.ranking_date)).subquery()
+
+      # Retrieves year and rank 
+      # Filters rankings where ranking_date=max_date for each year
+      query = self.rankings.join(   
+         subquery,
+         (Rankings.ranking_date == subquery.c.max_date)
+      ).with_entities(       # selected columns
+         subquery.c.year,
+         Rankings.rank
+      ).order_by(subquery.c.year)
+
+      # Formats for echarts
+      return [
+         {
+            'year': int(year),
+            'rank': rank
+         }
+         for year, rank in query
+      ]
+
+      
    
       
 # Model for table Rankings
@@ -295,30 +335,36 @@ def get_players():
 # GET player by id route handle
 @app.route('/players/<string:player_id>', methods=['GET'])
 def get_player(player_id):
-    try:
-        player = Players.query.filter_by(player_id=player_id).first()
+   try:
+      player_object = Players.query.filter_by(player_id=player_id).first()
 
-        if not player:
-            error_msg = f'Player id {player_id} not found in database.'
-            print(error_msg)
-            return jsonify({
-                'status': 'error',
-                'message': error_msg
-            }), 404
-
-        return jsonify({
-            'status': 'success',
-            'player': player.to_dict()
-        }), 200
-
-    except Exception as e:
-         error_msg = f'Error retrieving player: {str(e)}'
-         app.logger.error(error_msg, exc_info=True)
-         
+      if not player_object:
+         error_msg = f'Player id {player_id} not found in database.'
+         print(error_msg)
          return jsonify({
-               'status': 'error',
-               'message': error_msg
-         }), 500
+            'status': 'error',
+            'message': error_msg
+         }), 404
+      
+      player = player_object.to_dict()
+      player['ranks_by_year'] = player_object.get_rank_by_year()  
+      
+      response_object = {
+         'status': 'success',
+         'message': f'Player {player_id} has been retrieved successfully!',
+         'player': player
+      }
+
+      return jsonify(response_object), 200
+
+   except Exception as e:
+      error_msg = f'Error retrieving player {player_id}: {str(e)}'
+      app.logger.error(error_msg, exc_info=True)
+      
+      return jsonify({
+         'status': 'error',
+         'message': error_msg
+      }), 500
 
 
 # POST player route handle
@@ -348,10 +394,12 @@ def add_player():
       # Commits changes into database
       db.session.commit()
       
-      return jsonify({
+      response_object = {
          'status': 'success', 
          'message': 'New player has been added successfully!'
-      }), 201
+      }
+      
+      return jsonify(response_object), 201
    
    except Exception as e:
       db.session.rollback()
@@ -366,34 +414,36 @@ def add_player():
 # DELETE player route handle
 @app.route('/players/<string:player_id>', methods=['DELETE'])
 def delete_player(player_id):
-    try:
-        player = Players.query.filter_by(player_id=player_id).first()
-        
-        if not player:
-            return jsonify({
-                'status': 'error',
-                'message': f'Player id {player_id} not found in database.'
-            }), 404
-
-        # Deletes player
-        db.session.delete(player)
-        
-        # Commits changes into database
-        db.session.commit()
-
-        return jsonify({
-            'status': 'success',
-            'message': f'Player id {player_id} has been successfully deleted.'
-        }), 200
-
-    except Exception as e:
-        error_msg = f'Error deleting player: {str(e)}'
-        app.logger.error(error_msg, exc_info=True)
-        
-        return jsonify({
+   try:
+      player = Players.query.filter_by(player_id=player_id).first()
+      
+      if not player:
+         return jsonify({
             'status': 'error',
-            'message': error_msg
-        }), 500
+            'message': f'Player id {player_id} not found in database.'
+         }), 404
+
+      # Deletes player
+      db.session.delete(player)
+      
+      # Commits changes into database
+      db.session.commit()
+      
+      response_object = {
+         'status': 'success',
+         'message': f'Player id {player_id} has been successfully deleted.'
+      }
+
+      return jsonify(response_object), 200
+
+   except Exception as e:
+      error_msg = f'Error deleting player: {str(e)}'
+      app.logger.error(error_msg, exc_info=True)
+      
+      return jsonify({
+         'status': 'error',
+         'message': error_msg
+      }), 500
 
 # PUT player by id route handle
 @app.route('/players/<string:player_id>', methods=['PUT'])
@@ -429,11 +479,13 @@ def update_player(player_id):
 
       # Commits changes into database
       db.session.commit()
-
-      return jsonify({
+      
+      response_object = {
          'status': 'success',
          'message': f'Player id {player_id} has been successfully updated.'
-      }), 200
+      }
+
+      return jsonify(response_object), 200
 
    except Exception as e:
       db.session.rollback()

@@ -18,12 +18,14 @@
 
       <!-- Basic information -->
       <PlayerBio :player="player" />
+      <PlayerRankings :ranksByYear="player.ranks_by_year" />
 
    </div>
 </template>
 
 <script>
 import PlayerBio from '@/components/PlayerBio.vue'
+import PlayerRankings from '@/components/PlayerRankings.vue'
 import { getPlayerById } from '@/api/connectionService'
 
 export default {
@@ -34,7 +36,7 @@ export default {
       required: true
    },
 
-   components: { PlayerBio },
+   components: { PlayerBio, PlayerRankings },
 
    data() {
       return {
@@ -48,8 +50,14 @@ export default {
             height: '-',
             wikidata_id: '-',
             fullname: '',
+            ranks_by_year: []
          },
+
       }
+   },
+
+   computed : {
+      rankingsData
    },
 
    methods: {
